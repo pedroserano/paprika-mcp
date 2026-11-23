@@ -9,6 +9,7 @@ Lets Claude search your Paprika 3 recipes by **mood**, **season**, **occasion**,
 - "Which moods and seasons is my collection thin on?"
 - "Plan 3 cozy dinners and 1 baking project for this week"
 - "Put the chicken thigh potpie on Thursday's dinner"
+- "Add this week's meal plan to my grocery list"
 
 ## Tools
 | Tool | What it does |
@@ -23,6 +24,7 @@ Lets Claude search your Paprika 3 recipes by **mood**, **season**, **occasion**,
 | `undo_mood_edit` | Undoes the last mood, season or occasion change |
 | `add_to_meal_plan` | Puts a recipe on your Paprika meal plan for a day and meal (breakfast, lunch, dinner, snack or your own meal types), e.g. "add the potpie to Thursday dinner". If a name matches several recipes, Claude asks which one. |
 | `list_meal_plan` | Shows what's planned for the coming days |
+| `add_meal_plan_to_groceries` | Puts the ingredients of your planned meals on your default Paprika grocery list (or another list you name), e.g. "add this week's meals to my grocery list, but skip salt and olive oil". Can preview first, fills in aisles Paprika already knows, and won't add the same lines twice if you run it again. `add_to_meal_plan` can also add one recipe's ingredients as you plan it. |
 | `sync_now` | Syncs immediately |
 
 ## Setup (Claude Desktop on Mac)

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+import groceries
 import moods_edit
 from finder import Finder, recipe_minutes, season_for
 from paprika_client import CACHE_DIR, PaprikaClient, PaprikaError, RecipeStore
@@ -351,7 +352,8 @@ def _match_recipes(f: Finder, uid_or_name: str) -> list[dict]:
 
 
 @mcp.tool()
-def add_to_meal_plan(recipe: str, day: str, meal: str = "dinner") -> dict:
+def add_to_meal_plan(recipe: str, day: str, meal: str = "dinner",
+                     add_to_groceries: bool = False) -> dict:
     """Put a recipe on the user's Paprika meal plan; it shows up in the Paprika
     apps after they sync.
 
@@ -361,6 +363,8 @@ def add_to_meal_plan(recipe: str, day: str, meal: str = "dinner") -> dict:
     day: YYYY-MM-DD, "today", "tomorrow", or a weekday name (the next one).
     meal: breakfast, lunch, dinner (default), snack, or a custom meal type.
     Each call adds one meal; call it once per recipe and day.
+    add_to_groceries: also put the recipe's ingredients on the default grocery
+      list (or use add_meal_plan_to_groceries afterwards for a whole week).
     """
     f, _ = _finder()
     hits = _match_recipes(f, recipe)
@@ -379,10 +383,124 @@ def add_to_meal_plan(recipe: str, day: str, meal: str = "dinner") -> dict:
         return {"error": str(e), "added": False}
     except PaprikaError as e:
         return {"error": f"Paprika didn't accept the meal: {e}", "added": False}
-    return {"added": True, "recipe": saved["name"], "recipe_uid": saved["recipe_uid"],
-            "date": d.isoformat(), "weekday": d.strftime("%A"), "meal": type_name,
-            "meal_uid": saved["uid"],
-            "note": "Remove or move it in Paprika's meal planner if needed."}
+    result = {"added": True, "recipe": saved["name"], "recipe_uid": saved["recipe_uid"],
+              "date": d.isoformat(), "weekday": d.strftime("%A"), "meal": type_name,
+              "meal_uid": saved["uid"],
+              "note": "Remove or move it in Paprika's meal planner if needed."}
+    if add_to_groceries:
+        result["groceries"] = _add_groceries(store, [saved], None, ["water"], False)
+    return result
+
+
+def _grocery_list(lists: list[dict], wanted: str | None) -> dict | None:
+    """The named grocery list, else the one marked default, else the first."""
+    lists = sorted(lists, key=lambda g: g.get("order_flag", 0))
+    if wanted:
+        for g in lists:
+            if (g.get("name") or "").strip().lower() == wanted.strip().lower():
+                return g
+        raise ValueError(f"No grocery list called '{wanted}'. Lists: "
+                         + ", ".join(g.get("name", "?") for g in lists))
+    return next((g for g in lists if g.get("is_default")), lists[0] if lists else None)
+
+
+def _aisle_map(store: RecipeStore) -> dict[str, tuple[str, str]]:
+    """Ingredient name -> (aisle uid, aisle name), from what Paprika remembers."""
+    try:
+        aisles = {a["uid"]: a.get("name", "") for a in store.client.grocery_aisles()}
+        return {g["name"].strip().lower(): (g["aisle_uid"], aisles.get(g["aisle_uid"], ""))
+                for g in store.client.grocery_ingredients()
+                if g.get("name") and g.get("aisle_uid")}
+    except (PaprikaError, KeyError, TypeError):
+        return {}
+
+
+def _add_groceries(store: RecipeStore, meals: list[dict], list_name: str | None,
+                   skip: list[str], preview: bool) -> dict:
+    try:
+        glist = _grocery_list(store.client.grocery_lists() or [], list_name)
+        existing = store.client.groceries() or []
+    except ValueError as e:
+        return {"error": str(e), "added": 0}
+    except PaprikaError as e:
+        return {"error": f"Couldn't read the grocery list from Paprika: {e}", "added": 0}
+    list_uid = glist.get("uid") if glist else None
+    items, skipped, missing = groceries.build_items(
+        meals, store.recipes, existing, list_uid, _aisle_map(store), skip)
+    out = {"grocery_list": glist.get("name") if glist else "Groceries",
+           "recipes": sorted({i["recipe"] for i in items}),
+           "items": [{"item": i["name"], "recipe": i["recipe"],
+                      **({"aisle": i["aisle"]} if i["aisle"] else {})} for i in items],
+           "skipped": skipped}
+    if missing:
+        out["meals_without_recipe"] = missing
+    if preview or not items:
+        out.update(added=0, preview=preview)
+        if not items:
+            out["note"] = "Nothing new to add."
+        return out
+    try:
+        store.client.save_groceries(items)
+    except PaprikaError as e:
+        return {**out, "error": f"Paprika didn't accept the groceries: {e}", "added": 0}
+    out["added"] = len(items)
+    return out
+
+
+@mcp.tool()
+def add_meal_plan_to_groceries(start: str = "today", days: int = 7,
+                               recipes: list[str] | None = None,
+                               skip: list[str] | None = None,
+                               grocery_list: str | None = None,
+                               preview: bool = False) -> dict:
+    """Add the ingredients of the recipes on the user's Paprika meal plan to
+    their grocery list (the default list unless grocery_list names another).
+
+    start/days: which part of the plan, like list_meal_plan (default: the next 7 days).
+    recipes: only these planned recipes (uids or names); default all in range.
+    skip: ingredients to leave off, e.g. pantry staples the user has
+      ("salt", "olive oil"). Default: ["water"].
+    preview: true to show what would be added without changing anything;
+      useful to confirm with the user first.
+    Re-running is safe: lines already on the list (not yet bought) for the
+    same recipe aren't added again. A recipe planned twice is added twice.
+    """
+    store = _get_store()
+    try:
+        first = _parse_day(start)
+    except ValueError as e:
+        return {"error": str(e), "added": 0}
+    last = first + timedelta(days=max(1, min(days, 62)) - 1)
+    try:  # the plan may have changed on the phone since the last sync
+        fresh = store.client.meals()
+        with store.lock:
+            store.meals = fresh
+            store.version += 1
+    except PaprikaError:
+        pass
+    planned = []
+    for m in store.meals:
+        try:
+            d = date.fromisoformat((m.get("date") or "")[:10])
+        except ValueError:
+            continue
+        if first <= d <= last:
+            planned.append(m)
+    if recipes:
+        f, _ = _finder()
+        wanted = set()
+        for r in recipes:
+            hits = _match_recipes(f, r)
+            if not hits:
+                return {"error": f"No recipe matching '{r}'.", "added": 0}
+            wanted.update(h["uid"] for h in hits)
+        planned = [m for m in planned if m.get("recipe_uid") in wanted]
+    if not planned:
+        return {"from": first.isoformat(), "to": last.isoformat(), "added": 0,
+                "note": "No planned meals with recipes in that range."}
+    result = _add_groceries(store, planned, grocery_list,
+                            ["water"] if skip is None else skip, preview)
+    return {"from": first.isoformat(), "to": last.isoformat(), **result}
 
 
 @mcp.tool()

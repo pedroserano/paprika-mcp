@@ -147,12 +147,33 @@ class PaprikaClient:
             return self._request(f"/api/v1/sync/{endpoint}/",
                                  raw_body=body, content_type=ctype)
 
-    def save_meals(self, meals: list[dict]) -> object:
-        result = self._upload("meals", meals)
+    def _notify(self):
         try:  # tell the user's devices to pull the change now
             self._request(f"/api/{self.mode}/sync/notify/", raw_body=b"")
         except PaprikaError:
             pass
+
+    def save_meals(self, meals: list[dict]) -> object:
+        result = self._upload("meals", meals)
+        self._notify()
+        return result
+
+    def grocery_lists(self) -> list[dict]:
+        return self._api("grocerylists")
+
+    def groceries(self) -> list[dict]:
+        return self._api("groceries")
+
+    def grocery_aisles(self) -> list[dict]:
+        return self._api("groceryaisles")
+
+    def grocery_ingredients(self) -> list[dict]:
+        """Paprika's remembered ingredient -> aisle assignments."""
+        return self._api("groceryingredients")
+
+    def save_groceries(self, items: list[dict]) -> object:
+        result = self._upload("groceries", items)
+        self._notify()
         return result
 
 
