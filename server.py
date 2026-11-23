@@ -12,7 +12,7 @@ import os
 import sys
 import threading
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -302,6 +302,117 @@ def undo_mood_edit() -> dict:
     except OSError as e:
         return {"error": _unreadable_message(e) + " Not changed.", "changed": False}
     return {"changed": True, "config_file": str(CONFIG_PATH)}
+
+
+_DEFAULT_MEALS = ["breakfast", "lunch", "dinner", "snack"]
+_WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+
+def _parse_day(when: str) -> date:
+    """YYYY-MM-DD, today, tomorrow, or a weekday name (the next one, today included)."""
+    w = when.strip().lower()
+    today = date.today()
+    if w in ("", "today", "tonight"):
+        return today
+    if w == "tomorrow":
+        return today + timedelta(days=1)
+    w = w.removeprefix("this ").removeprefix("next ")
+    if w in _WEEKDAYS:
+        return today + timedelta(days=(_WEEKDAYS.index(w) - today.weekday()) % 7)
+    try:
+        return date.fromisoformat(w)
+    except ValueError:
+        raise ValueError(f"Can't read the date '{when}'. Use YYYY-MM-DD, today, "
+                         "tomorrow or a weekday name.") from None
+
+
+def _meal_type(store: RecipeStore, meal: str) -> tuple[int, str | None, str]:
+    """(type index, type uid if Paprika has one, display name) for a meal name."""
+    want = meal.strip().lower().rstrip("s") or "dinner"
+    types = sorted(store.meal_types(), key=lambda t: t.get("order_flag", 0))
+    for i, t in enumerate(types):
+        if (t.get("name") or "").strip().lower().rstrip("s") == want:
+            idx = _DEFAULT_MEALS.index(want) if want in _DEFAULT_MEALS else i
+            return idx, t.get("uid"), t.get("name")
+    if want in _DEFAULT_MEALS:
+        return _DEFAULT_MEALS.index(want), None, want.title()
+    names = [t.get("name") for t in types] or [m.title() for m in _DEFAULT_MEALS]
+    raise ValueError(f"No meal called '{meal}'. Choose one of: {', '.join(names)}.")
+
+
+def _match_recipes(f: Finder, uid_or_name: str) -> list[dict]:
+    """Exact uid, then exact name, then every name containing the text."""
+    key = uid_or_name.strip().lower()
+    for field in ("uid", "name"):
+        exact = [r for r in f.recipes if r.get(field, "").lower() == key]
+        if exact:
+            return exact[:1]
+    return [r for r in f.recipes if key in r.get("name", "").lower()]
+
+
+@mcp.tool()
+def add_to_meal_plan(recipe: str, day: str, meal: str = "dinner") -> dict:
+    """Put a recipe on the user's Paprika meal plan; it shows up in the Paprika
+    apps after they sync.
+
+    recipe: uid (best, e.g. from find_recipes) or name. If a name matches
+      several recipes nothing is added and the matches are returned: ask the
+      user which one, then call again with its uid.
+    day: YYYY-MM-DD, "today", "tomorrow", or a weekday name (the next one).
+    meal: breakfast, lunch, dinner (default), snack, or a custom meal type.
+    Each call adds one meal; call it once per recipe and day.
+    """
+    f, _ = _finder()
+    hits = _match_recipes(f, recipe)
+    if not hits:
+        return {"error": f"No recipe matching '{recipe}'.", "added": False}
+    if len(hits) > 1:
+        return {"error": f"'{recipe}' matches {len(hits)} recipes; say which one.",
+                "added": False,
+                "matches": [{"uid": r["uid"], "name": r.get("name")} for r in hits[:15]]}
+    store = _get_store()
+    try:
+        d = _parse_day(day)
+        idx, type_uid, type_name = _meal_type(store, meal)
+        saved = store.add_meal(hits[0], d.isoformat(), idx, type_uid)
+    except ValueError as e:
+        return {"error": str(e), "added": False}
+    except PaprikaError as e:
+        return {"error": f"Paprika didn't accept the meal: {e}", "added": False}
+    return {"added": True, "recipe": saved["name"], "recipe_uid": saved["recipe_uid"],
+            "date": d.isoformat(), "weekday": d.strftime("%A"), "meal": type_name,
+            "meal_uid": saved["uid"],
+            "note": "Remove or move it in Paprika's meal planner if needed."}
+
+
+@mcp.tool()
+def list_meal_plan(start: str = "today", days: int = 7) -> dict:
+    """The user's Paprika meal plan from start (YYYY-MM-DD, today, tomorrow or a
+    weekday) for the given number of days."""
+    store = _get_store()
+    try:
+        first = _parse_day(start)
+    except ValueError as e:
+        return {"error": str(e)}
+    last = first + timedelta(days=max(1, min(days, 62)) - 1)
+    names = {i: m.title() for i, m in enumerate(_DEFAULT_MEALS)}
+    for t in store.meal_types():
+        if t.get("uid"):
+            names[t["uid"]] = t.get("name")
+    plan: dict[str, list] = {}
+    for m in sorted(store.meals, key=lambda m: (m.get("date") or "", m.get("type", 0),
+                                                m.get("order_flag", 0))):
+        raw = (m.get("date") or "")[:10]
+        try:
+            d = date.fromisoformat(raw)
+        except ValueError:
+            continue
+        if first <= d <= last:
+            plan.setdefault(f"{raw} ({d.strftime('%A')})", []).append({
+                "meal": names.get(m.get("type_uid")) or names.get(m.get("type"), "Meal"),
+                "recipe": m.get("name") or store.recipes.get(m.get("recipe_uid"), {}).get("name"),
+                "recipe_uid": m.get("recipe_uid")})
+    return {"from": first.isoformat(), "to": last.isoformat(), "plan": plan}
 
 
 @mcp.tool()

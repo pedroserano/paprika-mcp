@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 
 BASE_URL = os.environ.get("PAPRIKA_BASE_URL", "https://www.paprikaapp.com").rstrip("/")
@@ -49,10 +50,14 @@ class PaprikaClient:
         self.token: str | None = None
         self.mode = "v2"  # falls back to v1 basic auth if v2 login fails
 
-    def _request(self, path: str, data: dict | None = None, auth: bool = True):
+    def _request(self, path: str, data: dict | None = None, auth: bool = True,
+                 raw_body: bytes | None = None, content_type: str | None = None):
         url = f"{BASE_URL}{path}"
-        body = urllib.parse.urlencode(data).encode() if data is not None else None
-        req = urllib.request.Request(url, data=body, method="POST" if body else "GET")
+        body = urllib.parse.urlencode(data).encode() if data is not None else raw_body
+        req = urllib.request.Request(url, data=body,
+                                     method="POST" if body is not None else "GET")
+        if content_type:
+            req.add_header("Content-Type", content_type)
         req.add_header("User-Agent", USER_AGENT)
         req.add_header("Accept-Encoding", "gzip")
         if auth:
@@ -76,7 +81,7 @@ class PaprikaClient:
                 raise RateLimited(ra) from e
             if e.code == 401 and auth and self.mode == "v2" and self.token:
                 self.token = None  # expired token: log in again once
-                return self._request(path, data, auth)
+                return self._request(path, data, auth, raw_body, content_type)
             if e.code == 401:
                 raise PaprikaError("Paprika rejected the email/password (HTTP 401).") from e
             raise PaprikaError(f"Paprika returned HTTP {e.code} for {path}") from e
@@ -122,6 +127,34 @@ class PaprikaClient:
     def meals(self) -> list[dict]:
         return self._api("meals")
 
+    def meal_types(self) -> list[dict]:
+        return self._api("mealtypes")
+
+    def _upload(self, endpoint: str, obj) -> object:
+        """POST a sync object the way the Paprika apps do: gzipped JSON sent as
+        a multipart file field named 'data'."""
+        boundary = f"----paprika-mcp-{uuid.uuid4().hex}"
+        blob = gzip.compress(json.dumps(obj).encode())
+        body = (f"--{boundary}\r\n"
+                'Content-Disposition: form-data; name="data"; filename="file"\r\n'
+                "Content-Type: application/octet-stream\r\n\r\n").encode() \
+            + blob + f"\r\n--{boundary}--\r\n".encode()
+        ctype = f"multipart/form-data; boundary={boundary}"
+        try:
+            return self._request(f"/api/{self.mode}/sync/{endpoint}/",
+                                 raw_body=body, content_type=ctype)
+        except _FallBack:
+            return self._request(f"/api/v1/sync/{endpoint}/",
+                                 raw_body=body, content_type=ctype)
+
+    def save_meals(self, meals: list[dict]) -> object:
+        result = self._upload("meals", meals)
+        try:  # tell the user's devices to pull the change now
+            self._request(f"/api/{self.mode}/sync/notify/", raw_body=b"")
+        except PaprikaError:
+            pass
+        return result
+
 
 class Pacer:
     """Polite request pacing: speeds up slowly, backs off hard on 429."""
@@ -162,6 +195,7 @@ class RecipeStore:
         self.version = 0
         self.status: dict = {"state": "idle"}
         self._thread: threading.Thread | None = None
+        self._meal_types: list[dict] | None = None
         self._load()
 
     # ---- persistence -------------------------------------------------------
@@ -282,6 +316,34 @@ class RecipeStore:
                     raise
                 time.sleep(5)  # transient network hiccup
         raise PaprikaError("Paprika kept refusing requests; run the sync again later to resume.")
+
+    def meal_types(self) -> list[dict]:
+        """Meal types (Breakfast, Lunch, Dinner, Snacks, plus any custom ones),
+        fetched once."""
+        if self._meal_types is None:
+            try:
+                self._meal_types = self.client.meal_types() or []
+            except PaprikaError:
+                self._meal_types = []
+        return self._meal_types
+
+    def add_meal(self, recipe: dict, day: str, type_index: int,
+                 type_uid: str | None) -> dict:
+        """Put a recipe on the meal plan for day (YYYY-MM-DD)."""
+        with self.lock:
+            order = sum(1 for m in self.meals
+                        if (m.get("date") or "")[:10] == day and m.get("type") == type_index)
+        meal = {"uid": str(uuid.uuid4()).upper(), "recipe_uid": recipe["uid"],
+                "date": f"{day} 00:00:00", "type": type_index,
+                "name": recipe.get("name", ""), "order_flag": order}
+        if type_uid:
+            meal["type_uid"] = type_uid
+        self.client.save_meals([meal])
+        with self.lock:
+            self.meals = self.meals + [meal]
+            self.version += 1
+        self._save()
+        return meal
 
     def active_recipes(self) -> list[dict]:
         with self.lock:

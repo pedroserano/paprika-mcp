@@ -8,6 +8,7 @@ Lets Claude search your Paprika 3 recipes by **mood**, **season**, **occasion**,
 - "Light winter dinners rated 4 stars or more"
 - "Which moods and seasons is my collection thin on?"
 - "Plan 3 cozy dinners and 1 baking project for this week"
+- "Put the chicken thigh potpie on Thursday's dinner"
 
 ## Tools
 | Tool | What it does |
@@ -20,6 +21,8 @@ Lets Claude search your Paprika 3 recipes by **mood**, **season**, **occasion**,
 | `mood_season_gaps` | Mood × season count grid, to find thin spots |
 | `edit_mood` / `edit_season` / `edit_occasion` | Ask Claude to change your mood, season or occasion definitions, e.g. "add my Braises category to cozy" or "make a date-night mood". Changes are checked before saving. |
 | `undo_mood_edit` | Undoes the last mood, season or occasion change |
+| `add_to_meal_plan` | Puts a recipe on your Paprika meal plan for a day and meal (breakfast, lunch, dinner, snack or your own meal types), e.g. "add the potpie to Thursday dinner". If a name matches several recipes, Claude asks which one. |
+| `list_meal_plan` | Shows what's planned for the coming days |
 | `sync_now` | Syncs immediately |
 
 ## Setup (Claude Desktop on Mac)
