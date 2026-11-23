@@ -40,12 +40,42 @@ else:
 _store: RecipeStore | None = None
 
 
-def _config() -> dict:
-    """User copy in ~/.paprika-mood/moods.json (created from the bundled default)."""
-    if not CONFIG_PATH.exists():
-        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_PATH.write_text((HERE / "moods.json").read_text())
-    return json.loads(CONFIG_PATH.read_text())
+_config_problem: str | None = None  # why the user's moods.json couldn't be used
+
+
+def _unreadable_message(e: Exception) -> str:
+    msg = f"Can't read {CONFIG_PATH} ({e.strerror or e})."
+    if isinstance(e, PermissionError):
+        msg += (f" The server runs as uid {os.getuid()}, which isn't allowed to read it. "
+                f"Fix it on the host, e.g. `chown {os.getuid()}:{os.getgid()} moods.json && "
+                "chmod 600 moods.json` "
+                "in the data folder.")
+    return msg
+
+
+def _config(strict: bool = False) -> dict:
+    """User copy of moods.json (created from the bundled default).
+
+    If the user's file can't be read (e.g. wrong owner on a NAS volume), searches
+    fall back to the bundled defaults and report why, instead of failing. With
+    strict=True (used for edits) the error is raised, so an edit never replaces
+    the user's own file with the defaults."""
+    global _config_problem
+    try:
+        if not CONFIG_PATH.exists():
+            CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            CONFIG_PATH.write_text((HERE / "moods.json").read_text())
+        cfg = json.loads(CONFIG_PATH.read_text())
+        _config_problem = None
+        return cfg
+    except OSError as e:
+        problem = _unreadable_message(e)
+    except json.JSONDecodeError as e:
+        problem = f"{CONFIG_PATH} isn't valid JSON (line {e.lineno}): {e.msg}."
+    if strict:
+        raise moods_edit.MoodEditError(problem + " Not changed.")
+    _config_problem = problem + " Using the built-in moods and seasons for now."
+    return json.loads((HERE / "moods.json").read_text())
 
 
 _cached: tuple[int, int, Finder] | None = None  # (store version, config mtime, finder)
@@ -74,11 +104,17 @@ def _finder() -> tuple[Finder, dict | None]:
             info["note"] = "First download still in progress; results will fill in as it continues."
         elif store.status.get("state") == "error":
             info["note"] = "Using the saved copy; the last sync failed."
-    cfg_mtime = CONFIG_PATH.stat().st_mtime_ns if CONFIG_PATH.exists() else 0
-    cfg = _config()
-    if not _cached or _cached[0] != store.version or _cached[1] != cfg_mtime:
+    try:
+        cfg_mtime = CONFIG_PATH.stat().st_mtime_ns if CONFIG_PATH.exists() else 0
+    except OSError:
+        cfg_mtime = -1
+    if not _cached or _cached[0] != store.version or _cached[1] != cfg_mtime or _config_problem:
+        cfg = _config()
         _cached = (store.version, cfg_mtime,
                    Finder(store.active_recipes(), store.categories, store.meals, cfg))
+    if _config_problem:
+        info = dict(info or {})
+        info["moods_file_problem"] = _config_problem
     return _cached[2], info
 
 
@@ -176,15 +212,18 @@ def list_moods_and_seasons() -> dict:
     """The mood, season and occasion definitions used for matching, plus the
     path of the file the user can edit to change them."""
     cfg = _config()
-    return {"config_file": str(CONFIG_PATH),
-            "moods": cfg.get("moods", {}), "seasons": cfg.get("seasons", {}),
-            "occasions": cfg.get("occasions", [])}
+    out = {"config_file": str(CONFIG_PATH),
+           "moods": cfg.get("moods", {}), "seasons": cfg.get("seasons", {}),
+           "occasions": cfg.get("occasions", [])}
+    if _config_problem:
+        out["problem"] = _config_problem
+    return out
 
 
 def _apply_edit(make_mutation, added_categories: list[str] | None) -> dict:
     """Run a moods.json edit; report errors plainly and flag unknown categories."""
     try:
-        result = moods_edit.edit(CONFIG_PATH, _config, make_mutation())
+        result = moods_edit.edit(CONFIG_PATH, lambda: _config(strict=True), make_mutation())
     except moods_edit.MoodEditError as e:
         return {"error": str(e), "changed": False}
     result["changed"] = True
@@ -258,6 +297,8 @@ def undo_mood_edit() -> dict:
         moods_edit.undo(CONFIG_PATH)
     except (moods_edit.MoodEditError, ValueError) as e:
         return {"error": str(e), "changed": False}
+    except OSError as e:
+        return {"error": _unreadable_message(e) + " Not changed.", "changed": False}
     return {"changed": True, "config_file": str(CONFIG_PATH)}
 
 
