@@ -228,6 +228,19 @@ class RecipeStore:
                 removed = [u for u in self.recipes if u not in index]
                 for u in removed:
                     del self.recipes[u]
+            # Categories and meals first: they're one request each, and recipes only
+            # carry category uids, so without the names nothing matches by category
+            # until a long first download finishes.
+            cats = self._retry(self.client.categories, pacer, progress)
+            try:
+                meals = self._retry(self.client.meals, pacer, progress)
+            except PaprikaError:
+                meals = self.meals
+            with self.lock:
+                self.categories = {c["uid"]: c for c in cats}
+                self.meals = meals
+                self.version += 1
+            self._save()
             total = len(changed)
             for uid in changed:
                 r = self._retry(lambda: self.client.recipe(uid), pacer, progress, done, total)
@@ -240,14 +253,7 @@ class RecipeStore:
                     progress(done, total, None)
                 if done % 200 == 0:
                     self._save()
-            cats = self._retry(self.client.categories, pacer, progress)
-            try:
-                meals = self._retry(self.client.meals, pacer, progress)
-            except PaprikaError:
-                meals = self.meals
             with self.lock:
-                self.categories = {c["uid"]: c for c in cats}
-                self.meals = meals
                 self.last_sync = time.time()
                 self.version += 1
             self.status = {"state": "idle", "last_result": {
