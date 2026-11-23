@@ -1,0 +1,31 @@
+{
+  "_help": "Edit freely. 'categories' match your Paprika category names (case-insensitive; a parent category also matches its sub-categories). 'keywords' are matched in recipe name, ingredients, description and notes. A category in Paprika whose name equals a mood or season (e.g. 'Cozy', 'Winter') is matched automatically.",
+
+  "hemisphere": "north",
+
+  "moods": {
+    "cozy":        {"categories": ["Soups", "Stews", "Braises", "Comfort Food", "Casseroles"], "keywords": ["braise", "stew", "simmer", "roast", "gratin", "cheese", "dumpling"]},
+    "lazy":        {"categories": ["Quick", "One Pot", "Sheet Pan", "Weeknight"], "keywords": ["sheet pan", "one pot", "skillet", "no-cook"], "max_minutes": 30},
+    "light":       {"categories": ["Salads", "Healthy", "Vegetables"], "keywords": ["salad", "lemon", "herbs", "cucumber", "grilled", "steamed"], "avoid_keywords": ["cream", "butter", "bacon", "fried"]},
+    "bright":      {"categories": ["Salads"], "keywords": ["lemon", "lime", "vinegar", "herbs", "chili", "ginger", "citrus"]},
+    "indulgent":   {"categories": ["Desserts", "Comfort Food", "Brunch"], "keywords": ["butter", "cream", "chocolate", "cheese", "bacon", "fried"]},
+    "celebratory": {"categories": ["Entertaining", "Holiday", "Project", "Party"], "keywords": ["roast", "tenderloin", "champagne", "layer cake"]},
+    "adventurous": {"categories": ["To Try", "International"], "keywords": ["gochujang", "miso", "harissa", "tamarind", "sumac", "za'atar", "fish sauce"], "prefer_never_cooked": true},
+    "sick-day":    {"categories": ["Soups"], "keywords": ["broth", "ginger", "noodle", "congee", "rice", "chicken soup"], "avoid_keywords": ["spicy", "fried"]},
+    "baking":      {"categories": ["Baking", "Bread", "Desserts", "Cookies", "Cakes"], "keywords": ["flour", "oven", "dough", "yeast"]}
+  },
+
+  "seasons": {
+    "winter": {"categories": ["Winter", "Soups", "Stews", "Braises"], "produce": ["squash", "kale", "cabbage", "citrus", "orange", "grapefruit", "potato", "parsnip", "turnip", "leek", "brussels sprouts", "pomegranate"]},
+    "spring": {"categories": ["Spring"], "produce": ["asparagus", "peas", "radish", "rhubarb", "strawberr", "ramps", "artichoke", "spring onion", "fava"]},
+    "summer": {"categories": ["Summer", "Grilling", "Salads"], "produce": ["tomato", "corn", "zucchini", "peach", "berries", "basil", "eggplant", "watermelon", "cucumber", "cherr"]},
+    "fall":   {"categories": ["Fall", "Autumn"], "produce": ["pumpkin", "squash", "apple", "pear", "sweet potato", "mushroom", "cranberr", "fig", "cauliflower", "sage"]}
+  },
+
+  "occasions": [
+    {"name": "Thanksgiving",     "from": "11-01", "to": "11-30", "categories": ["Thanksgiving", "Holiday"], "keywords": ["turkey", "stuffing", "cranberr", "pumpkin pie", "gravy"]},
+    {"name": "Holiday baking",   "from": "12-01", "to": "12-26", "categories": ["Christmas", "Holiday", "Cookies"], "keywords": ["gingerbread", "cookie", "peppermint", "eggnog"]},
+    {"name": "Super Bowl",       "from": "02-01", "to": "02-12", "categories": ["Game Day", "Appetizers"], "keywords": ["wings", "dip", "nachos", "chili"]},
+    {"name": "Fourth of July",   "from": "06-25", "to": "07-05", "categories": ["Grilling", "BBQ"], "keywords": ["burger", "grill", "potato salad", "corn"]}
+  ]
+}
