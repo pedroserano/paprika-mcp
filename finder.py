@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from collections import Counter
 from datetime import date, datetime
 
@@ -32,9 +33,24 @@ def parse_minutes(text: str | None) -> int | None:
     return int(m[1]) if m else None
 
 
+# Word endings a keyword may take, so 'roast' hits 'roasted', 'apple' hits 'apples'
+# and 'cranberr' hits 'cranberries', but 'pear' doesn't hit 'pearl'.
+_ENDINGS = "s|es|d|ed|ing|y|ies|ied|er|ers"
+
+
+@lru_cache(maxsize=1024)
+def _pattern(word: str) -> re.Pattern:
+    w = word.lower().strip()
+    stems = [re.escape(w)]
+    if len(w) > 3 and w[-1] in "ey":  # braise -> braising, cheese -> cheesy, fry -> fried
+        stems.append(re.escape(w[:-1]))
+    return re.compile(r"(?<![a-z])(?:" + "|".join(stems) + r")(?:" + _ENDINGS + r")?(?![a-z])")
+
+
 def _has(text: str, word: str) -> bool:
-    """Match at a word start, so 'sage' doesn't hit 'sausage' but 'strawberr' hits 'strawberries'."""
-    return re.search(r"(?<![a-z])" + re.escape(word.lower()), text) is not None
+    """Whole-word match allowing common endings: 'sage' doesn't hit 'sausage',
+    'pear' doesn't hit 'pearl', but 'strawberr' hits 'strawberries'."""
+    return _pattern(word).search(text) is not None
 
 
 def recipe_minutes(r: dict) -> int | None:
