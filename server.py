@@ -17,6 +17,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+import moods_edit
 from finder import Finder, recipe_minutes, season_for
 from paprika_client import CACHE_DIR, PaprikaClient, PaprikaError, RecipeStore
 
@@ -73,7 +74,7 @@ def _finder() -> tuple[Finder, dict | None]:
             info["note"] = "First download still in progress; results will fill in as it continues."
         elif store.status.get("state") == "error":
             info["note"] = "Using the saved copy; the last sync failed."
-    cfg_mtime = int(CONFIG_PATH.stat().st_mtime) if CONFIG_PATH.exists() else 0
+    cfg_mtime = CONFIG_PATH.stat().st_mtime_ns if CONFIG_PATH.exists() else 0
     cfg = _config()
     if not _cached or _cached[0] != store.version or _cached[1] != cfg_mtime:
         _cached = (store.version, cfg_mtime,
@@ -178,6 +179,86 @@ def list_moods_and_seasons() -> dict:
     return {"config_file": str(CONFIG_PATH),
             "moods": cfg.get("moods", {}), "seasons": cfg.get("seasons", {}),
             "occasions": cfg.get("occasions", [])}
+
+
+def _apply_edit(make_mutation, added_categories: list[str] | None) -> dict:
+    """Run a moods.json edit; report errors plainly and flag unknown categories."""
+    try:
+        result = moods_edit.edit(CONFIG_PATH, _config, make_mutation())
+    except moods_edit.MoodEditError as e:
+        return {"error": str(e), "changed": False}
+    result["changed"] = True
+    result["config_file"] = str(CONFIG_PATH)
+    known = {c.get("name", "").lower() for c in _get_store().categories.values()}
+    unknown = [c for c in (added_categories or []) if known and c.strip().lower() not in known]
+    if unknown:
+        result["warning"] = (f"Not (yet) a category in Paprika: {', '.join(unknown)}. "
+                             "Kept anyway; it will match once a category by that name exists.")
+    return result
+
+
+@mcp.tool()
+def edit_mood(name: str, add_categories: list[str] | None = None,
+              remove_categories: list[str] | None = None,
+              add_keywords: list[str] | None = None, remove_keywords: list[str] | None = None,
+              add_avoid_keywords: list[str] | None = None,
+              remove_avoid_keywords: list[str] | None = None,
+              max_minutes: int | None = None, prefer_never_cooked: bool | None = None,
+              delete: bool = False) -> dict:
+    """Create, change or delete a mood in the user's moods.json. Only fields you
+    pass change; lists are added to / removed from, not replaced.
+
+    Confirm with the user before deleting a mood. categories are Paprika
+    category names (a parent also covers its sub-categories); keywords match
+    recipe name, ingredients, description and notes by word start (e.g.
+    "strawberr"); avoid_keywords push recipes down. max_minutes sets a default
+    time limit (0 removes it). prefer_never_cooked boosts untried recipes.
+    The previous file is kept, so undo_mood_edit can revert the last change.
+    """
+    return _apply_edit(lambda: moods_edit.mood_mutation(
+        name, add_categories, remove_categories, add_keywords, remove_keywords,
+        add_avoid_keywords, remove_avoid_keywords, max_minutes, prefer_never_cooked,
+        delete), add_categories)
+
+
+@mcp.tool()
+def edit_season(season: str, add_categories: list[str] | None = None,
+                remove_categories: list[str] | None = None,
+                add_produce: list[str] | None = None, remove_produce: list[str] | None = None,
+                add_avoid_keywords: list[str] | None = None,
+                remove_avoid_keywords: list[str] | None = None,
+                hemisphere: str | None = None) -> dict:
+    """Change a season (winter/spring/summer/fall) in moods.json: its categories,
+    in-season produce words, and avoid words. hemisphere ("north"/"south")
+    sets which way the seasons run. Lists are added to / removed from."""
+    return _apply_edit(lambda: moods_edit.season_mutation(
+        season, add_categories, remove_categories, add_produce, remove_produce,
+        add_avoid_keywords, remove_avoid_keywords, hemisphere), add_categories)
+
+
+@mcp.tool()
+def edit_occasion(name: str, from_date: str | None = None, to_date: str | None = None,
+                  add_categories: list[str] | None = None,
+                  remove_categories: list[str] | None = None,
+                  add_keywords: list[str] | None = None,
+                  remove_keywords: list[str] | None = None, delete: bool = False) -> dict:
+    """Create, change or delete an occasion (a yearly date window like
+    Thanksgiving) in moods.json. Dates are MM-DD; a window may wrap the year
+    end (12-20 to 01-05). Confirm with the user before deleting."""
+    return _apply_edit(lambda: moods_edit.occasion_mutation(
+        name, from_date, to_date, add_categories, remove_categories,
+        add_keywords, remove_keywords, delete), add_categories)
+
+
+@mcp.tool()
+def undo_mood_edit() -> dict:
+    """Restore moods.json to how it was before the last edit (calling it again
+    re-applies that edit)."""
+    try:
+        moods_edit.undo(CONFIG_PATH)
+    except (moods_edit.MoodEditError, ValueError) as e:
+        return {"error": str(e), "changed": False}
+    return {"changed": True, "config_file": str(CONFIG_PATH)}
 
 
 @mcp.tool()

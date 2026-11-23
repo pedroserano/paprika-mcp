@@ -18,6 +18,8 @@ Lets Claude search your Paprika 3 recipes by **mood**, **season**, **occasion**,
 | `list_categories` | Your category tree with recipe counts |
 | `list_moods_and_seasons` | Shows the current mood and season definitions |
 | `mood_season_gaps` | Mood × season count grid, to find thin spots |
+| `edit_mood` / `edit_season` / `edit_occasion` | Ask Claude to change your mood, season or occasion definitions, e.g. "add my Braises category to cozy" or "make a date-night mood". Changes are checked before saving. |
+| `undo_mood_edit` | Undoes the last mood, season or occasion change |
 | `sync_now` | Syncs immediately |
 
 ## Setup (Claude Desktop on Mac)
@@ -51,7 +53,7 @@ Manual setup:
 ## Run on a server (TrueNAS, any Docker host): phone + claude.ai
 Instead of each Mac keeping its own copy, run the connector on an always-on box. It syncs with Paprika on a timer, and you add it once as a **custom connector** in claude.ai, which makes it available in the Claude web, desktop and mobile apps.
 
-**Trade-offs:** your recipes are always fresh, the first big download doesn't need your Mac awake, and your Paprika password lives only on the server. On the other hand, it needs the server and internet to be up, and `moods.json` is edited on the server (`<dataset>/moods.json`).
+**Trade-offs:** your recipes are always fresh, the first big download doesn't need your Mac awake, and your Paprika password lives only on the server. On the other hand, it needs the server and internet to be up, and `moods.json` lives on the server (`<dataset>/moods.json`), though you can simply ask Claude to change it (see below).
 
 1. **Make a secret.** The connector URL contains a long random secret, which is what keeps others out. Treat the full URL like a password:
    ```
@@ -81,6 +83,12 @@ On first run, the connector copies `moods.json` to `~/.paprika-mood/moods.json`.
 
 An easy way to set this up: ask Claude to "run list_categories and suggest moods.json mappings for my categories."
 
+**Or just ask Claude**, which works from your phone too. For example: "add Braises and Short Ribs to cozy", "make lazy 20 minutes max", "add a date-night mood for steak, risotto and my Fancy category", "add a Lunar New Year occasion from 01-20 to 02-20 with dumplings". Claude uses `edit_mood`, `edit_season` and `edit_occasion`:
+- Only the parts you mention change, and lists get added to or removed from, not replaced.
+- Bad input is rejected with a clear error (an impossible date, a 5,000-minute limit), and the file is never left half-written.
+- If you add a category that doesn't exist in Paprika yet, Claude warns you but keeps it, so it starts matching once you create that category.
+- The previous version is saved as `moods.json.bak`, and "undo that" restores it.
+
 ## How ranking works
 Points come from category matches (strongest), keyword or produce matches, current occasions, having cooked it in this month in past years (from your Paprika meal planner), rating, and favorites. Highly rated recipes you haven't made in over a year also get a small boost.
 
@@ -92,6 +100,6 @@ The first download goes at a pace Paprika allows, and waits automatically if Pap
 You can also leave it to Claude, which continues the download in the background. You can search while it runs, and results fill in as recipes arrive.
 
 ## Notes
-- This uses Paprika's **unofficial** sync API, the same one other community tools use. It is **read-only** and never changes your recipes. If Paprika changes the API, it may stop working until updated.
+- This uses Paprika's **unofficial** sync API, the same one other community tools use. It is **read-only** and never changes your recipes. The only file it changes is your own `moods.json`, and only when you ask. If Paprika changes the API, it may stop working until updated.
 - Your password stays in your local Claude config. The recipe cache is saved to `~/.paprika-mood/cache.json` and only your user account can read it. Delete that file to force a full re-download.
 - Options (environment variables): `PAPRIKA_SYNC_MINUTES` (default 5), `PAPRIKA_CACHE_DIR`, and `PAPRIKA_MOODS_FILE`. Server mode also uses `PAPRIKA_TRANSPORT=http`, `PAPRIKA_URL_SECRET`, `PAPRIKA_HOST`, and `PAPRIKA_PORT` (default 8080).
