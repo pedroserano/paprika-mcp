@@ -6,9 +6,9 @@
   "moods": {
     "cozy":        {"categories": ["Soups", "Stews", "Braises", "Comfort Food", "Casseroles"], "keywords": ["braise", "stew", "simmer", "roast", "gratin", "cheese", "dumpling"]},
     "lazy":        {"categories": ["Quick", "One Pot", "Sheet Pan", "Weeknight"], "keywords": ["sheet pan", "one pot", "skillet", "no-cook"], "max_minutes": 30},
-    "light":       {"categories": ["Salads", "Healthy", "Vegetables"], "keywords": ["salad", "lemon", "herbs", "cucumber", "grilled", "steamed"], "avoid_keywords": ["cream", "butter", "bacon", "fried"]},
-    "bright":      {"categories": ["Salads"], "keywords": ["lemon", "lime", "vinegar", "herbs", "chili", "ginger", "citrus"]},
-    "indulgent":   {"categories": ["Desserts", "Comfort Food", "Brunch"], "keywords": ["butter", "cream", "chocolate", "cheese", "bacon", "fried"]},
+    "light":       {"categories": ["Salads", "Healthy", "Vegetables"], "keywords": ["salad", "lemon", "herb", "herbs", "cucumber", "grilled", "steamed"], "avoid_keywords": ["cream", "butter", "bacon", "fried"]},
+    "bright":      {"categories": ["Salads"], "keywords": ["lemon", "lime", "vinegar", "herb", "herbs", "chili", "ginger", "citrus"]},
+    "indulgent":   {"categories": ["Desserts", "Comfort Food", "Brunch"], "keywords": ["butter", "cream", "chocolate", "cheese", "bacon", "fried", "buttercream", "butterscotch", "cheesecake"]},
     "celebratory": {"categories": ["Entertaining", "Holiday", "Project", "Party"], "keywords": ["roast", "tenderloin", "champagne", "layer cake"]},
     "adventurous": {"categories": ["To Try", "International"], "keywords": ["gochujang", "miso", "harissa", "tamarind", "sumac", "za'atar", "fish sauce"], "prefer_never_cooked": true},
     "sick-day":    {"categories": ["Soups"], "keywords": ["broth", "ginger", "noodle", "congee", "rice", "chicken soup"], "avoid_keywords": ["spicy", "fried"]},
@@ -19,7 +19,7 @@
     "winter": {"categories": ["Winter", "Soups", "Stews", "Braises"], "produce": ["squash", "kale", "cabbage", "citrus", "orange", "grapefruit", "potato", "parsnip", "turnip", "leek", "brussels sprouts", "pomegranate"]},
     "spring": {"categories": ["Spring"], "produce": ["asparagus", "peas", "radish", "rhubarb", "strawberr", "ramps", "artichoke", "spring onion", "fava"]},
     "summer": {"categories": ["Summer", "Grilling", "Salads"], "produce": ["tomato", "corn", "zucchini", "peach", "berries", "basil", "eggplant", "watermelon", "cucumber", "cherr"]},
-    "fall":   {"categories": ["Fall", "Autumn"], "produce": ["pumpkin", "squash", "apple", "pear", "sweet potato", "mushroom", "cranberr", "fig", "cauliflower", "sage"]}
+    "fall":   {"categories": ["Fall", "Autumn"], "produce": ["pumpkin", "squash", "apple", "pear", "sweet potato", "mushroom", "cranberr", "fig", "cauliflower", "sage", "applesauce"]}
   },
 
   "occasions": [

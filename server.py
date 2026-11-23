@@ -249,8 +249,10 @@ def edit_mood(name: str, add_categories: list[str] | None = None,
 
     Confirm with the user before deleting a mood. categories are Paprika
     category names (a parent also covers its sub-categories); keywords match
-    recipe name, ingredients, description and notes by word start (e.g.
-    "strawberr"); avoid_keywords push recipes down. max_minutes sets a default
+    recipe name, ingredients, description and notes as whole words, allowing
+    common endings (s, es, ed, ing, y, ies...), so "roast" hits "roasted" and
+    "strawberr" hits "strawberries", but "pear" won't hit "pearl"; add compound
+    words such as "applesauce" separately. avoid_keywords push recipes down. max_minutes sets a default
     time limit (0 removes it). prefer_never_cooked boosts untried recipes.
     The previous file is kept, so undo_mood_edit can revert the last change.
     """
