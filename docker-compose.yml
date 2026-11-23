@@ -2,8 +2,9 @@
 # Put secrets in .env next to this file (see .env.example).
 services:
   paprika:
-    build: .
-    image: paprika-mcp:latest
+    # Prebuilt by GitHub Actions on every push to main (amd64 + arm64).
+    # To build from this folder instead, replace the image line with:  build: .
+    image: ghcr.io/pedroserano/paprika-mcp:latest
     container_name: paprika
     restart: unless-stopped
     env_file: .env

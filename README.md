@@ -60,11 +60,28 @@ Instead of each Mac keeping its own copy, run the connector on an always-on box.
    openssl rand -hex 24
    ```
 2. **Configure it.** Copy `.env.example` to `.env` and fill in your Paprika email and password, plus `PAPRIKA_URL_SECRET`.
-3. **Start it.**
-   - **Any Docker host:** run `docker compose up -d --build`.
-   - **TrueNAS SCALE:** create a dataset such as `tank/apps/paprika` (owned by the `apps` user, 568) and copy this repo into it. Then go to *Apps → Discover Apps → ⋮ → Install via YAML*. Paste `docker-compose.yml`, changing the volume to `/mnt/tank/apps/paprika/data:/data` and `build: .` to `build: /mnt/tank/apps/paprika`, and set `env_file` to that folder's `.env`.
+3. **Start it.** You don't need to build anything: GitHub publishes a ready-made image, `ghcr.io/pedroserano/paprika-mcp:latest`, every time `main` changes.
+   - **Any Docker host:** in a folder with `docker-compose.yml` and your `.env`, run `docker compose up -d`.
+   - **TrueNAS SCALE (24.10+):** create a dataset such as `pool/apps/paprika` with the **Apps** preset. Then go to *Apps → Discover Apps → ⋮ → Install via YAML*, name it `paprika`, and paste the following, filling in your values:
+     ```yaml
+     services:
+       paprika:
+         image: ghcr.io/pedroserano/paprika-mcp:latest
+         restart: unless-stopped
+         environment:
+           PAPRIKA_TRANSPORT: http
+           PAPRIKA_EMAIL: you@example.com
+           PAPRIKA_PASSWORD: your-paprika-password
+           PAPRIKA_URL_SECRET: paste-your-secret
+           PAPRIKA_SYNC_MINUTES: "5"
+         volumes:
+           - /mnt/pool/apps/paprika:/data
+         ports:
+           - "8080:8080"
+     ```
+   - **Updating:** on TrueNAS, use the app's *Update* / *Pull image* option. Elsewhere, run `docker compose pull && docker compose up -d`. Your cache and `moods.json` in the data folder are kept.
 
-   For a big library, you can watch the first download with `docker exec -it paprika python sync.py`.
+   For a big library, you can watch the first download with `docker exec -it paprika python sync.py` (on TrueNAS, the container name is shown by `docker ps`).
 4. **Give it a public HTTPS address.** claude.ai reaches connectors from Anthropic's servers, not from your home network, so a LAN-only address won't work. Neither option below opens a router port:
    - **Tailscale Funnel** (no domain needed): with Tailscale on the NAS, run `tailscale funnel --bg 8080`. Your address is `https://<nas-name>.<tailnet>.ts.net`.
    - **Cloudflare Tunnel** (needs a domain on Cloudflare): create a tunnel, route a hostname to `http://paprika:8080`, put the token in `.env`, and uncomment the `cloudflared` service.
