@@ -208,6 +208,78 @@ def list_categories() -> dict:
     return _with_sync({"total_recipes": len(f.recipes), "categories": [node(u) for u in roots]}, s)
 
 
+def _category_uid(f: Finder, name: str) -> str:
+    """Category uid for a name, or 'Parent > Child' when two share a name."""
+    parts = [p.strip().lower() for p in name.split(">")]
+    hits = [u for u, lineage in f.cat_lineage.items()
+            if lineage[:len(parts)] == parts[::-1]]
+    if len(hits) == 1:
+        return hits[0]
+    if not hits:
+        raise ValueError(f"No category called '{name}'. Use list_categories to see them; "
+                         "this tool doesn't create new categories.")
+    def path(u):
+        names, cur = [], u
+        while cur in f.categories and len(names) < 10:
+            names.append(f.categories[cur].get("name", ""))
+            cur = f.categories[cur].get("parent_uid")
+        return " > ".join(reversed(names))
+    paths = [path(u) for u in hits]
+    raise ValueError(f"'{name}' matches {len(hits)} categories; name one as "
+                     + " or ".join(f"'{p}'" for p in paths) + ".")
+
+
+@mcp.tool()
+def edit_recipe_categories(recipe: str, add: list[str] | None = None,
+                           remove: list[str] | None = None) -> dict:
+    """Add or remove categories on one of the user's Paprika recipes. The change
+    syncs to their Paprika apps.
+
+    recipe: uid (best) or name. If a name matches several recipes nothing
+      changes and the matches are returned: ask which one.
+    add / remove: existing category names, as list_categories shows them. If
+      two categories share a name, write 'Parent > Child' (e.g. 'Region > Tiki').
+      New categories aren't created; the user makes those in Paprika.
+    """
+    f, _ = _finder()
+    hits = _match_recipes(f, recipe)
+    if not hits:
+        return {"error": f"No recipe matching '{recipe}'.", "changed": False}
+    if len(hits) > 1:
+        return {"error": f"'{recipe}' matches {len(hits)} recipes; say which one.",
+                "changed": False,
+                "matches": [{"uid": r["uid"], "name": r.get("name")} for r in hits[:15]]}
+    if not add and not remove:
+        return {"error": "Nothing to add or remove.", "changed": False}
+    try:
+        add_uids = [_category_uid(f, n) for n in add or []]
+        remove_uids = {_category_uid(f, n) for n in remove or []}
+    except ValueError as e:
+        return {"error": str(e), "changed": False}
+    target = hits[0]
+    before = list(target.get("categories") or [])
+    after = [u for u in before if u not in remove_uids]
+    after += [u for u in dict.fromkeys(add_uids) if u not in after]
+    if after == before:
+        return {"changed": False, "recipe": target.get("name"),
+                "categories": f.display_categories(target),
+                "note": "It already had those categories."}
+
+    def change(full: dict):
+        cats = [u for u in (full.get("categories") or []) if u not in remove_uids]
+        full["categories"] = cats + [u for u in dict.fromkeys(add_uids) if u not in cats]
+
+    try:
+        saved = _get_store().update_recipe(target["uid"], change)
+    except PaprikaError as e:
+        return {"error": f"Paprika didn't accept the change: {e}", "changed": False}
+    names = lambda uids: [f.categories[u].get("name") for u in uids if u in f.categories]
+    return {"changed": True, "recipe": saved.get("name"), "uid": target["uid"],
+            "categories": names(saved.get("categories") or []),
+            "added": names([u for u in add_uids if u not in before]),
+            "removed": names([u for u in remove_uids if u in before])}
+
+
 @mcp.tool()
 def list_moods_and_seasons() -> dict:
     """The mood, season and occasion definitions used for matching, plus the

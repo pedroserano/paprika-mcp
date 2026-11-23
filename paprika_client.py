@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import fcntl
 import gzip
+import hashlib
 import json
 import os
 import threading
@@ -155,6 +156,12 @@ class PaprikaClient:
 
     def save_meals(self, meals: list[dict]) -> object:
         result = self._upload("meals", meals)
+        self._notify()
+        return result
+
+    def save_recipe(self, recipe: dict) -> object:
+        """Upload a whole recipe (as returned by recipe(uid), with changes)."""
+        result = self._upload(f"recipe/{recipe['uid']}", recipe)
         self._notify()
         return result
 
@@ -365,6 +372,21 @@ class RecipeStore:
             self.version += 1
         self._save()
         return meal
+
+    def update_recipe(self, uid: str, change) -> dict:
+        """Fetch the full recipe from Paprika (not the trimmed cache), apply
+        change(recipe) to it, give it a new hash so devices pull it, upload it,
+        and update the cache."""
+        full = self.client.recipe(uid)
+        change(full)
+        full["hash"] = hashlib.sha256(
+            json.dumps(full, sort_keys=True).encode() + uuid.uuid4().bytes).hexdigest().upper()
+        self.client.save_recipe(full)
+        with self.lock:
+            self.recipes[uid] = {k: full.get(k) for k in KEEP if k in full}
+            self.version += 1
+        self._save()
+        return full
 
     def active_recipes(self) -> list[dict]:
         with self.lock:
