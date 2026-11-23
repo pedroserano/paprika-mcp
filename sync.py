@@ -19,6 +19,8 @@ def creds():
     if e and p:
         return e, p
     cfg = Path.home() / "Library/Application Support/Claude/claude_desktop_config.json"
+    if not cfg.exists():
+        sys.exit("Set PAPRIKA_EMAIL and PAPRIKA_PASSWORD (or run install.sh on a Mac first).")
     servers = json.loads(cfg.read_text())["mcpServers"]
     env = (servers.get("Paprika") or servers["paprika-mood"])["env"]
     return env["PAPRIKA_EMAIL"], env["PAPRIKA_PASSWORD"]

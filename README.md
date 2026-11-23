@@ -48,6 +48,29 @@ Manual setup:
    On Windows, the command path is `...\.venv\Scripts\python.exe`.
 4. **Restart Claude Desktop.** The first search downloads your whole library, so it may take a minute. After that, only changes are downloaded.
 
+## Run on a server (TrueNAS, any Docker host): phone + claude.ai
+Instead of each Mac keeping its own copy, run the connector on an always-on box. It syncs with Paprika on a timer, and you add it once as a **custom connector** in claude.ai, which makes it available in the Claude web, desktop and mobile apps.
+
+**Trade-offs:** your recipes are always fresh, the first big download doesn't need your Mac awake, and your Paprika password lives only on the server. On the other hand, it needs the server and internet to be up, and `moods.json` is edited on the server (`<dataset>/moods.json`).
+
+1. **Make a secret.** The connector URL contains a long random secret, which is what keeps others out. Treat the full URL like a password:
+   ```
+   openssl rand -hex 24
+   ```
+2. **Configure it.** Copy `.env.example` to `.env` and fill in your Paprika email and password, plus `PAPRIKA_URL_SECRET`.
+3. **Start it.**
+   - **Any Docker host:** run `docker compose up -d --build`.
+   - **TrueNAS SCALE:** create a dataset such as `tank/apps/paprika` (owned by the `apps` user, 568) and copy this repo into it. Then go to *Apps → Discover Apps → ⋮ → Install via YAML*. Paste `docker-compose.yml`, changing the volume to `/mnt/tank/apps/paprika/data:/data` and `build: .` to `build: /mnt/tank/apps/paprika`, and set `env_file` to that folder's `.env`.
+
+   For a big library, you can watch the first download with `docker exec -it paprika python sync.py`.
+4. **Give it a public HTTPS address.** claude.ai reaches connectors from Anthropic's servers, not from your home network, so a LAN-only address won't work. Neither option below opens a router port:
+   - **Tailscale Funnel** (no domain needed): with Tailscale on the NAS, run `tailscale funnel --bg 8080`. Your address is `https://<nas-name>.<tailnet>.ts.net`.
+   - **Cloudflare Tunnel** (needs a domain on Cloudflare): create a tunnel, route a hostname to `http://paprika:8080`, put the token in `.env`, and uncomment the `cloudflared` service.
+5. **Add the connector.** In claude.ai, go to *Settings → Connectors → Add custom connector*. Use the URL `https://<your-host>/<PAPRIKA_URL_SECRET>/mcp` and no authentication. It then shows up on your phone and in Claude Desktop too.
+6. **Remove the local copy** to avoid duplicate tools: delete the `"Paprika"` entry from `~/Library/Application Support/Claude/claude_desktop_config.json` on your Mac(s), then restart Claude Desktop.
+
+Check that it's up with `curl https://<your-host>/healthz`, which should print `ok`. Any other path without the secret returns 404. Request logging is off so the secret doesn't end up in logs.
+
 ## Make the moods yours (important for a heavily categorized library)
 On first run, the connector copies `moods.json` to `~/.paprika-mood/moods.json`. Edit that copy:
 - Each mood or season lists **your** category names. A parent category also covers its sub-categories, so `"Soups"` matches `Soups › Bean Soups`.
@@ -71,4 +94,4 @@ You can also leave it to Claude, which continues the download in the background.
 ## Notes
 - This uses Paprika's **unofficial** sync API, the same one other community tools use. It is **read-only** and never changes your recipes. If Paprika changes the API, it may stop working until updated.
 - Your password stays in your local Claude config. The recipe cache is saved to `~/.paprika-mood/cache.json` and only your user account can read it. Delete that file to force a full re-download.
-- Options (environment variables): `PAPRIKA_SYNC_MINUTES` (default 5), `PAPRIKA_CACHE_DIR`, and `PAPRIKA_MOODS_FILE`.
+- Options (environment variables): `PAPRIKA_SYNC_MINUTES` (default 5), `PAPRIKA_CACHE_DIR`, and `PAPRIKA_MOODS_FILE`. Server mode also uses `PAPRIKA_TRANSPORT=http`, `PAPRIKA_URL_SECRET`, `PAPRIKA_HOST`, and `PAPRIKA_PORT` (default 8080).

@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+import threading
+import time
 from datetime import date
 from pathlib import Path
 
@@ -20,7 +23,19 @@ from paprika_client import CACHE_DIR, PaprikaClient, PaprikaError, RecipeStore
 HERE = Path(__file__).parent
 CONFIG_PATH = Path(os.environ.get("PAPRIKA_MOODS_FILE", CACHE_DIR / "moods.json"))
 
-mcp = FastMCP("Paprika")
+# "stdio" (default: launched by Claude Desktop on this computer) or "http"
+# (a long-running server, e.g. in Docker on a NAS, reached as a custom connector).
+TRANSPORT = os.environ.get("PAPRIKA_TRANSPORT", "stdio").strip().lower()
+URL_SECRET = os.environ.get("PAPRIKA_URL_SECRET", "").strip().strip("/")
+
+if TRANSPORT == "http":
+    # Bind to all interfaces; the secret URL path is the access control, so the
+    # localhost-only Host-header check FastMCP applies by default must stay off.
+    mcp = FastMCP("Paprika", host=os.environ.get("PAPRIKA_HOST", "0.0.0.0"),
+                  port=int(os.environ.get("PAPRIKA_PORT", "8080")),
+                  streamable_http_path=f"/{URL_SECRET}/mcp", stateless_http=True)
+else:
+    mcp = FastMCP("Paprika")
 _store: RecipeStore | None = None
 
 
@@ -182,5 +197,42 @@ def sync_now() -> dict:
     return {"status": st, "recipes_saved": len(store.recipes)}
 
 
+def _sync_forever():
+    """HTTP mode: keep the cache fresh even when nobody is searching."""
+    minutes = max(1, int(os.environ.get("PAPRIKA_SYNC_MINUTES", "5")))
+    while True:
+        try:
+            store = _get_store()
+            if store.is_stale():
+                store.sync_in_background()
+        except Exception as e:  # e.g. missing credentials; keep the server up
+            print(f"scheduled sync failed: {e}", file=sys.stderr, flush=True)
+        time.sleep(minutes * 60)
+
+
+def _serve_http():
+    if len(URL_SECRET) < 24 or not URL_SECRET.replace("-", "").replace("_", "").isalnum():
+        sys.exit("PAPRIKA_URL_SECRET must be set to at least 24 letters/digits "
+                 "(e.g. `openssl rand -hex 24`) to run in http mode.")
+    import uvicorn
+    from starlette.responses import PlainTextResponse
+
+    @mcp.custom_route("/healthz", methods=["GET"])
+    async def healthz(_request):
+        return PlainTextResponse("ok")
+
+    threading.Thread(target=_sync_forever, daemon=True).start()
+    print(f"Paprika MCP listening on {mcp.settings.host}:{mcp.settings.port} "
+          "at /<PAPRIKA_URL_SECRET>/mcp", file=sys.stderr, flush=True)
+    # access_log off: request paths contain the secret.
+    uvicorn.run(mcp.streamable_http_app(), host=mcp.settings.host,
+                port=mcp.settings.port, access_log=False, log_level="warning")
+
+
 if __name__ == "__main__":
-    mcp.run()
+    if TRANSPORT == "http":
+        _serve_http()
+    elif TRANSPORT == "stdio":
+        mcp.run()
+    else:
+        sys.exit(f"Unknown PAPRIKA_TRANSPORT {TRANSPORT!r}: use 'stdio' or 'http'.")

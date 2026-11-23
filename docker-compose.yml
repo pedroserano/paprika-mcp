@@ -1,0 +1,28 @@
+# Paprika connector as a long-running server (e.g. a TrueNAS SCALE custom app).
+# Put secrets in .env next to this file (see .env.example).
+services:
+  paprika:
+    build: .
+    image: paprika-mcp:latest
+    container_name: paprika
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PAPRIKA_TRANSPORT: http
+    volumes:
+      # Recipe cache + your editable moods.json. On TrueNAS, point this at a
+      # dataset, e.g. /mnt/tank/apps/paprika:/data (owned by the apps user, 568).
+      - ./data:/data
+    ports:
+      # LAN access. You can drop this if you only reach it through a tunnel.
+      - "8080:8080"
+
+  # Optional: public HTTPS through Cloudflare Tunnel (needs a domain on Cloudflare).
+  # In the Cloudflare dashboard, route your hostname to http://paprika:8080.
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+  #   depends_on: [paprika]
